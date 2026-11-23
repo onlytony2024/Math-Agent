@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MathMind AI · 数学文献与习题分析 Agent</title>
+    
+    <!-- 引入 Google Fonts: Inter & JetBrains Mono & Noto Serif SC -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Serif+SC:wght@500;700&display=swap" rel="stylesheet">
+    
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+                        serif: ['"Noto Serif SC"', 'Georgia', 'serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                    },
+                    colors: {
+                        paper: '#FAF9F6',
+                        ink: '#1E293B',
+                        academic: {
+                            50: '#F0F4F8',
+                            100: '#D9E2EC',
+                            200: '#BCCCDC',
+                            600: '#334E68',
+                            700: '#243B53',
+                            800: '#102A43',
+                            900: '#0A192F',
+                        },
+                        accent: {
+                            500: '#2563EB',
+                            600: '#1D4ED8',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- 引入 KaTeX 样式与核心库 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+
+    <!-- 引入 Marked.js 用于 Markdown 解析 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- 引入 PDF.js 用于浏览器端解析 PDF 文件 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        // 配置 PDF.js Worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+
+    <style>
+        /* 自定义滚动条与学术排版细节 */
+        body {
+            background-color: #F4F5F7;
+            color: #1E293B;
+        }
+        
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #CBD5E1;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94A3B8;
+        }
+
+        /* 数学公式块高亮样式 */
+        .katex-display {
+            background-color: #F8FAFC;
+            border-left: 3px solid #3B82F6;
+            padding: 0.85rem 1rem;
+            margin: 0.85rem 0;
+            border-radius: 0 0.5rem 0.5rem 0;
+            overflow-x: auto;
+            overflow-y: hidden;
+            position: relative;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
+        }
+
+        /* 单个公式复制悬浮按钮 */
+        .formula-wrapper {
+            position: relative;
+        }
+        .copy-latex-btn {
+            position: absolute;
+            top: 0.35rem;
+            right: 0.35rem;
+            opacity: 0;
+            transition: opacity 0.2s ease, background-color 0.2s ease;
+            z-index: 10;
+        }
+        .formula-wrapper:hover .copy-latex-btn {
+            opacity: 1;
+        }
+
+        /* Markdown 内容排版优化 */
+        .markdown-body p {
+            margin-bottom: 0.75rem;
+            line-height: 1.7;
+        }
+        .markdown-body p:last-child {
+            margin-bottom: 0;
+        }
+        .markdown-body h1, .markdown-body h2, .markdown-body h3 {
+            font-family: "Noto Serif SC", Georgia, serif;
+            font-weight: 700;
+            color: #0F172A;
+            margin-top: 1.25rem;
+            margin-bottom: 0.6rem;
+        }
+        .markdown-body h2 { font-size: 1.2rem; border-bottom: 1px solid #E2E8F0; padding-bottom: 0.3rem; }
+        .markdown-body h3 { font-size: 1.05rem; }
+        .markdown-body ul, .markdown-body ol {
+            margin-left: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+        .markdown-body ul { list-style-type: disc; }
+        .markdown-body ol { list-style-type: decimal; }
+        .markdown-body li { margin-bottom: 0.35rem; line-height: 1.65; }
+        .markdown-body blockquote {
+            border-left: 3px solid #94A3B8;
+            padding-left: 0.85rem;
+            color: #475569;
+            font-style: italic;
+            margin: 0.75rem 0;
+            background: #F8FAFC;
+            padding-top: 0.4rem;
+            padding-bottom: 0.4rem;
+            border-radius: 0 0.375rem 0.375rem 0;
+        }
+        .markdown-body code {
+            background-color: #F1F5F9;
+            color: #0F172A;
+            padding: 0.15rem 0.35rem;
+            border-radius: 0.25rem;
+            font-family: "JetBrains Mono", monospace;
+            font-size: 0.875em;
+        }
+        .markdown-body pre {
+            background-color: #1E293B;
+            color: #F8FAFC;
+            padding: 0.85rem 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            margin: 0.75rem 0;
+        }
+        .markdown-body pre code {
+            background-color: transparent;
+            color: inherit;
+            padding: 0;
+        }
+        .markdown-body strong {
+            color: #0F172A;
+            font-weight: 600;
+        }
+
+        /* 拖拽悬停动画 */
+        .dropzone-active {
+            border-color: #2563EB !important;
+            background-color: #EFF6FF !important;
+            transform: scale(1.01);
+        }
+
+        /* 加载脉冲动画 */
+        @keyframes dotPulse {
+            0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+            40% { transform: scale(1); opacity: 1; }
+        }
+        .dot-pulse span {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            margin: 0 2px;
+            background-color: #2563EB;
+            border-radius: 50%;
+            animation: dotPulse 1.4s infinite ease-in-out both;
+        }
+        .dot-pulse span:nth-child(1) { animation-delay: -0.32s; }
+        .dot-pulse span:nth-child(2) { animation-delay: -0.16s; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden antialiased selection:bg-blue-100 selection:text-blue-900">
+
+    <!-- 全局提示 Toast 容器 (替代 alert) -->
+    <div id="toast-container" class="fixed top-16 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- 顶部简洁导航栏 -->
+    <header class="bg-white border-b border-slate-200 px-4 sm:px-6 h-14 flex items-center justify-between shrink-0 shadow-xs z-20">
+        <div class="flex items-center gap-3">
+            <!-- 数学积分/Σ 徽标 -->
+            <div class="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-serif font-bold text-lg shadow-xs">
+                ∫
+            </div>
+            <div>
+                <h1 class="text-base sm:text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                    MathMind AI
+                    <span class="hidden sm:inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                        数学文献与习题分析 Agent
+                    </span>
+                </h1>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2 sm:gap-3">
+            <!-- 文档状态指示器 -->
+            <div id="doc-status-badge" class="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200 transition-colors">
+                <span id="doc-status-dot" class="w-2 h-2 rounded-full bg-slate-400"></span>
+                <span id="doc-status-text" class="max-w-[140px] truncate">未加载数学文档</span>
+            </div>
+
+            <!-- API 设置按钮与状态指示 -->
+            <button id="open-api-modal-btn" title="配置大模型 API 接口" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 hover:border-blue-300 transition-all cursor-pointer shadow-2xs">
+                <span id="api-status-dot" class="w-2 h-2 rounded-full bg-amber-400"></span>
+                <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                </svg>
+                <span id="api-status-label">API 设置</span>
+            </button>
+
+            <!-- 导出对话按钮 -->
+            <button id="export-chat-btn" title="导出对话为 Markdown 文件" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium text-slate-600 hover:text-blue-600 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 transition-all cursor-pointer">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                </svg>
+                <span class="hidden sm:inline">导出 MD</span>
+            </button>
+
+            <!-- 清空对话按钮 -->
+            <button id="clear-chat-btn" title="清空当前对话记录" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium text-slate-600 hover:text-red-600 hover:bg-red-50 border border-slate-200 hover:border-red-200 transition-all cursor-pointer">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                </svg>
+                <span class="hidden sm:inline">清空</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- API 配置弹窗 (Modal) -->
+    <div id="api-settings-modal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white border border-slate-200 rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-fade-in">
+            <!-- 弹窗头部 -->
+            <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-paper">
+                <div class="flex items-center gap-2">
+                    <span class="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center text-sm">⚙️</span>
+                    <div>
+                        <h3 class="text-base font-bold text-slate-900">大模型 API 接口配置</h3>
+                        <p class="text-[11px] text-slate-500">配置仅保存在您当前浏览器的 localStorage 中，安全私密</p>
+                    </div>
+                </div>
+                <button id="close-api-modal-btn" class="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-lg transition-colors cursor-pointer">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- 弹窗主体 -->
+            <div class="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+                <!-- 接口协议模式切换 -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-2">选择 API 协议模式</label>
+                    <div class="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl border border-slate-200">
+                        <button type="button" id="tab-gemini" class="py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer bg-white text-slate-900 shadow-2xs">
+                            Google Gemini API
+                        </button>
+                        <button type="button" id="tab-openai" class="py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer text-slate-600 hover:text-slate-900">
+                            OpenAI 兼容 (DeepSeek/通义)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 模式 A：Google Gemini 配置区 -->
+                <div id="panel-gemini" class="space-y-3.5">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Gemini API Key</label>
+                        <input type="password" id="gemini-key-input" placeholder="AIzaSy...（留空则尝试使用当前预览内置环境）" class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white font-mono">
+                        <p class="text-[11px] text-slate-500 mt-1">可在 Google AI Studio 获取免费 Key。独立部署到公网后必须填写。</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">模型名称 (Model)</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="gemini-model-input" value="gemini-2.5-flash" placeholder="例如 gemini-2.5-flash" class="flex-1 px-3 py-2 text-sm bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white font-mono">
+                        </div>
+                        <div class="flex flex-wrap gap-1.5 mt-2">
+                            <button type="button" class="preset-model-btn px-2 py-1 text-[11px] bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-700 rounded border border-slate-200 cursor-pointer font-mono" data-target="gemini-model-input" data-val="gemini-2.5-flash">gemini-2.5-flash</button>
+                            <button type="button" class="preset-model-btn px-2 py-1 text-[11px] bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-700 rounded border border-slate-200 cursor-pointer font-mono" data-target="gemini-model-input" data-val="gemini-2.5-pro">gemini-2.5-pro</button>
+                            <button type="button" class="preset-model-btn px-2 py-1 text-[11px] bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-700 rounded border border-slate-200 cursor-pointer font-mono" data-target="gemini-model-input" data-val="gemini-3-flash-preview">gemini-3-flash-preview</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 模式 B：OpenAI 兼容接口配置区 -->
+                <div id="panel-openai" class="hidden space-y-3.5">
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="text-xs font-semibold text-slate-700">接口地址 (Base URL)</label>
+                            <div class="flex gap-1.5">
+                                <button type="button" id="preset-deepseek-btn" class="px-2 py-0.5 text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 rounded border border-blue-200 font-medium cursor-pointer">DeepSeek 预设</button>
+                                <button type="button" id="preset-qwen-btn" class="px-2 py-0.5 text-[11px] bg-purple-50 hover:bg-purple-100 text-purple-700 rounded border border-purple-200 font-medium cursor-pointer">通义千问预设</button>
+                            </div>
+                        </div>
+                        <input type="text" id="openai-baseurl-input" value="https://api.deepseek.com/v1" placeholder="https://api.deepseek.com/v1" class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">API Key</label>
+                        <input type="password" id="openai-key-input" placeholder="sk-..." class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">模型名称 (Model)</label>
+                        <input type="text" id="openai-model-input" value="deepseek-reasoner" placeholder="deepseek-reasoner 或 qwen-max" class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white font-mono">
+                        <div class="flex flex-wrap gap-1.5 mt-2">
+                            <button type="button" class="preset-model-btn px-2 py-1 text-[11px] bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-700 rounded border border-slate-200 cursor-pointer font-mono" data-target="openai-model-input" data-val="deepseek-reasoner">deepseek-reasoner (R1推理)</button>
+                            <button type="button" class="preset-model-btn px-2 py-1 text-[11px] bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-700 rounded border border-slate-200 cursor-pointer font-mono" data-target="openai-model-input" data-val="deepseek-chat">deepseek-chat</button>
+                            <button type="button" class="preset-model-btn px-2 py-1 text-[11px] bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-700 rounded border border-slate-200 cursor-pointer font-mono" data-target="openai-model-input" data-val="qwen-max">qwen-max</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 弹窗底部操作栏 -->
+            <div class="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                    <button type="button" id="test-api-btn" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 transition-colors cursor-pointer">
+                        ⚡ 测试连接
+                    </button>
+                    <button type="button" id="clear-api-btn" class="px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 transition-colors cursor-pointer">
+                        清除本地配置
+                    </button>
+                </div>
+                <button type="button" id="save-api-btn" class="px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-slate-900 hover:bg-blue-600 text-white transition-colors cursor-pointer shadow-xs">
+                    保存配置
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主体双栏工作区 (移动端上下堆叠，桌面端左右分栏) -->
+    <main class="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        
+        <!-- 左侧栏：文件上传与文档工作台 -->
+        <aside class="w-full lg:w-[360px] xl:w-[400px] bg-paper border-b lg:border-b-0 lg:border-r border-slate-200 flex flex-col shrink-0 max-h-[42vh] lg:max-h-none overflow-y-auto">
+            <div class="p-4 sm:p-5 flex flex-col gap-4 flex-1">
+                
+                <!-- 区域标题 -->
+                <div class="flex items-center justify-between">
+                    <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                        <svg class="w-4 h-4 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                        文献与习题上传区
+                    </h2>
+                    <span class="text-[11px] text-slate-400">支持 PDF / TXT / MD</span>
+                </div>
+
+                <!-- 醒目的虚线拖拽上传方框 (Dropzone) -->
+                <div id="dropzone" class="relative group border-2 border-dashed border-slate-300 hover:border-blue-500 bg-white hover:bg-blue-50/40 rounded-xl p-5 sm:p-6 text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center min-h-[150px] lg:min-h-[190px] shadow-2xs">
+                    <input type="file" id="file-input" accept=".pdf,.txt,.md,.tex" class="hidden">
+                    
+                    <div class="w-12 h-12 rounded-full bg-blue-50 text-blue-600 group-hover:scale-110 group-hover:bg-blue-100 transition-transform flex items-center justify-center mb-3">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                        </svg>
+                    </div>
+                    
+                    <p class="text-sm font-semibold text-slate-800 mb-1">
+                        点击或拖拽数学文件至此方框
+                    </p>
+                    <p class="text-xs text-slate-500 max-w-[240px] leading-relaxed">
+                        自动解析 PDF 论文、高数讲义、微积分习题集或 LaTeX 笔记
+                    </p>
+                </div>
+
+                <!-- 解析进度指示器 (默认隐藏) -->
+                <div id="parsing-indicator" class="hidden bg-blue-50 border border-blue-200 rounded-xl p-4">
+                    <div class="flex items-center gap-3 mb-2">
+                        <svg class="animate-spin h-4 w-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span id="parsing-status-text" class="text-xs font-medium text-blue-800">正在使用 PDF.js 提取数学文本...</span>
+                    </div>
+                    <div class="w-full bg-blue-200 rounded-full h-1.5 overflow-hidden">
+                        <div id="parsing-progress-bar" class="bg-blue-600 h-1.5 rounded-full transition-all duration-300" style="width: 15%"></div>
+                    </div>
+                </div>
+
+                <!-- 已上传文档预览卡片 (默认隐藏) -->
+                <div id="file-preview-card" class="hidden bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col gap-3">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="flex items-center gap-2.5 min-w-0">
+                            <div class="w-9 h-9 rounded-lg bg-red-50 text-red-600 border border-red-100 flex items-center justify-center shrink-0 font-mono text-xs font-bold" id="file-ext-badge">
+                                PDF
+                            </div>
+                            <div class="min-w-0">
+                                <h3 id="file-name-display" class="text-sm font-semibold text-slate-900 truncate" title="">document.pdf</h3>
+                                <div class="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                                    <span id="file-pages-display">0 页</span>
+                                    <span>•</span>
+                                    <span id="file-chars-display">0 字</span>
+                                </div>
+                            </div>
+                        </div>
+                        <button id="remove-file-btn" title="移除当前文件" class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer shrink-0">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- 提取文本片段预览 -->
+                    <div class="bg-slate-50 border border-slate-200/80 rounded-lg p-2.5">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-[11px] font-medium text-slate-500">文本内容摘要预览</span>
+                            <button id="reupload-btn" class="text-[11px] text-blue-600 hover:underline font-medium cursor-pointer">重新上传</button>
+                        </div>
+                        <p id="file-snippet-preview" class="text-xs text-slate-600 font-mono line-clamp-4 leading-relaxed break-all">
+                            暂无预览内容...
+                        </p>
+                    </div>
+                </div>
+
+                <!-- 演示示例与使用提示 (桌面端显示更完整) -->
+                <div class="mt-auto pt-2 hidden lg:block">
+                    <div class="bg-slate-100/80 border border-slate-200/80 rounded-xl p-3.5 text-xs text-slate-600 space-y-2">
+                        <div class="font-semibold text-slate-800 flex items-center gap-1.5">
+                            <span class="text-blue-600">✦</span> 数学 Agent 推理引擎特性
+                        </div>
+                        <ul class="space-y-1.5 text-slate-600 pl-1">
+                            <li class="flex items-start gap-1.5">
+                                <span class="text-slate-400">•</span>
+                                <span><strong>本地 PDF 深度解析</strong>：无需上传云端服务器，浏览器直接逐页提取公式与定理上下文。</span>
+                            </li>
+                            <li class="flex items-start gap-1.5">
+                                <span class="text-slate-400">•</span>
+                                <span><strong>严谨证明推演</strong>：自动检验假设条件、补全隐含引理，逐步拆解推导过程。</span>
+                            </li>
+                            <li class="flex items-start gap-1.5">
+                                <span class="text-slate-400">•</span>
+                                <span><strong>LaTeX 源码一键提取</strong>：悬停任意块级公式即可复制纯正 LaTeX 代码。</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </aside>
+
+        <!-- 右侧栏：交互对话区 -->
+        <section class="flex-1 flex flex-col bg-white overflow-hidden relative">
+            
+            <!-- 聊天气泡流 -->
+            <div id="chat-messages" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 scroll-smooth">
+                
+                    <!-- 可折叠的提取文本片段预览 -->
+                    <div class="bg-slate-50 border border-slate-200/80 rounded-lg p-2.5">
+                        <div class="flex items-center justify-between">
+                            <button type="button" id="toggle-snippet-btn" class="flex items-center gap-1 text-[11px] font-medium text-slate-600 hover:text-slate-900 cursor-pointer">
+                                <svg id="snippet-chevron" class="w-3.5 h-3.5 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                                <span>文本内容摘要预览</span>
+                            </button>
+                            <button id="reupload-btn" class="text-[11px] text-blue-600 hover:underline font-medium cursor-pointer">重新上传</button>
+                        </div>
+                        <div id="snippet-content-box" class="mt-1.5">
+                            <p id="file-snippet-preview" class="text-xs text-slate-600 font-mono line-clamp-4 leading-relaxed break-all">
+                                暂无预览内容...
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- 底部操作与输入区 -->
+            <div class="border-t border-slate-200 bg-white/95 backdrop-blur-xs p-3 sm:p-4 shrink-0">
+                <div class="max-w-4xl mx-auto flex flex-col gap-2.5">
+                    
+                    <!-- 预设快捷分析按钮栏 -->
+                    <div class="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+                        <span class="text-[11px] font-medium text-slate-400 shrink-0 select-none">快捷指令:</span>
+                        <button type="button" class="quick-prompt-btn shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 hover:border-blue-200 transition-colors cursor-pointer" data-prompt="请通读当前文档，提炼出其中所有的核心定义（Definition）、定理（Theorem）、引理（Lemma）和推论（Corollary），并用清晰的数学语言总结它们的逻辑依赖关系。">
+                            📐 提炼核心定理与定义
+                        </button>
+                        <button type="button" class="quick-prompt-btn shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 hover:border-blue-200 transition-colors cursor-pointer" data-prompt="请对文档中的主要定理或例题进行逐步推导证明，明确指出每一步所使用的数学性质、恒等变换或隐含条件，并检查是否存在跳跃步骤。">
+                            🔍 逐步推导证明过程
+                        </button>
+                        <button type="button" class="quick-prompt-btn shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 hover:border-blue-200 transition-colors cursor-pointer" data-prompt="请提取文档中的关键数学公式，逐一解释公式中每个符号（变量、算子、集合等）的物理或数学含义、适用条件以及几何直观。">
+                            ∑ 提取所有公式并解释
+                        </button>
+                        <button type="button" class="quick-prompt-btn shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 hover:border-blue-200 transition-colors cursor-pointer" data-prompt="基于当前文档涉及的数学知识点与难度，设计 3 道具有代表性的同类巩固练习题（包含计算题与证明题），并在最后附上详细的分步解答。">
+                            ✍️ 生成同类练习题
+                        </button>
+                    </div>
+
+                    <!-- 输入框与发送按钮 -->
+                    <form id="chat-form" class="relative flex items-end gap-2 bg-paper border border-slate-300 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 rounded-xl p-2 transition-all shadow-2xs">
+                        <textarea 
+                            id="user-input" 
+                            rows="1" 
+                            placeholder="输入你的数学问题，或针对上传的 PDF 提问（支持 Shift+Enter 换行，支持输入 LaTeX 如 $\lim_{x\to 0}\frac{\sin x}{x}$）..."
+                            class="w-full bg-transparent text-sm text-slate-800 placeholder-slate-400 resize-none border-0 focus:outline-none py-1.5 px-2 max-h-36 leading-relaxed"
+                        ></textarea>
+                        
+                        <button 
+                            type="submit" 
+                            id="send-btn"
+                            class="shrink-0 h-9 px-4 rounded-lg bg-slate-900 hover:bg-blue-600 disabled:bg-slate-300 text-white text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                        >
+                            <span>发送</span>
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                            </svg>
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <script>
+        /**
+         * MathMind AI 核心前端逻辑
+         * 包含：PDF.js 浏览器端解析、Markdown + KaTeX 数学公式保护渲染、Gemini API 调用（含指数退避重试）
+         */
+
+        // ==================== 1. 状态管理 ====================
+        const STORAGE_KEY = 'mathmind_ai_api_config_v1';
+
+        const appState = {
+            document: {
+                name: '',
+                type: '',
+                pages: 0,
+                charCount: 0,
+                content: '' // 提取的完整文本内容
+            },
+            chatHistory: [], // 存储多轮对话记录 { role: 'user' | 'model', text: string }
+            isGenerating: false,
+            apiConfig: {
+                provider: 'gemini', // 'gemini' | 'openai'
+                geminiKey: '',
+                geminiModel: 'gemini-2.5-flash',
+                openaiBaseUrl: 'https://api.deepseek.com/v1',
+                openaiKey: '',
+                openaiModel: 'deepseek-reasoner'
+            }
+        };
+
+        // 数学领域专项系统提示词
+        const MATH_SYSTEM_PROMPT = `你是一位严谨、博学且善于启发式教学的数学研究与教学助手（MathMind AI）。
+你的核心职责是帮助用户深度阅读数学文献（论文、讲义、教材）并解决高难度数学问题。
+
+请严格遵循以下输出与推理规范：
+1. **数学严谨性**：在推导证明或解题时，必须明确指出每一步所依赖的定理、引理、假设条件或定义。如果原文档的证明存在跳跃，请主动补全隐含的中间推理步骤。
+2. **公式排版规范（极其重要）**：
+   - 所有行内数学公式、变量符号、集合名称必须使用单个美元符号包裹，例如：$x \\in \\mathbb{R}$、$f'(x)$、$\\epsilon > 0$。
+   - 所有独立成行的核心公式、方程组、定理表达式必须使用双美元符号包裹，例如：
+     $$\\int_{a}^{b} f(x)\\,dx = F(b) - F(a)$$
+   - 严禁使用 \\( ... \\) 或 \\[ ... \\] 作为定界符，统一使用 $...$ 和 $$...$$，以确保前端 KaTeX 引擎 100% 精准渲染。
+3. **结构化表达**：善用 Markdown 标题、加粗、列表来组织你的分析（如：【核心结论】、【符号说明】、【分步推导】、【几何/物理直观】）。
+4. **文档上下文遵循**：当用户已上传数学文档时，优先基于文档中的符号体系、定义和上下文进行解答；若文档未提及相关前置知识，可结合标准数学理论进行补充说明并注明。`;
+
+        // ==================== 2. DOM 元素引用 ====================
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('file-input');
+        const parsingIndicator = document.getElementById('parsing-indicator');
+        const parsingStatusText = document.getElementById('parsing-status-text');
+        const parsingProgressBar = document.getElementById('parsing-progress-bar');
+        
+        const filePreviewCard = document.getElementById('file-preview-card');
+        const fileExtBadge = document.getElementById('file-ext-badge');
+        const fileNameDisplay = document.getElementById('file-name-display');
+        const filePagesDisplay = document.getElementById('file-pages-display');
+        const fileCharsDisplay = document.getElementById('file-chars-display');
+        const fileSnippetPreview = document.getElementById('file-snippet-preview');
+        const removeFileBtn = document.getElementById('remove-file-btn');
+        const reuploadBtn = document.getElementById('reupload-btn');
+
+        const docStatusBadge = document.getElementById('doc-status-badge');
+        const docStatusDot = document.getElementById('doc-status-dot');
+        const docStatusText = document.getElementById('doc-status-text');
+        const clearChatBtn = document.getElementById('clear-chat-btn');
+        const exportChatBtn = document.getElementById('export-chat-btn');
+
+        // API 设置弹窗相关 DOM
+        const openApiModalBtn = document.getElementById('open-api-modal-btn');
+        const closeApiModalBtn = document.getElementById('close-api-modal-btn');
+        const apiSettingsModal = document.getElementById('api-settings-modal');
+        const apiStatusDot = document.getElementById('api-status-dot');
+        const apiStatusLabel = document.getElementById('api-status-label');
+
+        const tabGemini = document.getElementById('tab-gemini');
+        const tabOpenai = document.getElementById('tab-openai');
+        const panelGemini = document.getElementById('panel-gemini');
+        const panelOpenai = document.getElementById('panel-openai');
+
+        const geminiKeyInput = document.getElementById('gemini-key-input');
+        const geminiModelInput = document.getElementById('gemini-model-input');
+        const openaiBaseUrlInput = document.getElementById('openai-baseurl-input');
+        const openaiKeyInput = document.getElementById('openai-key-input');
+        const openaiModelInput = document.getElementById('openai-model-input');
+
+        const presetDeepseekBtn = document.getElementById('preset-deepseek-btn');
+        const presetQwenBtn = document.getElementById('preset-qwen-btn');
+        const testApiBtn = document.getElementById('test-api-btn');
+        const clearApiBtn = document.getElementById('clear-api-btn');
+        const saveApiBtn = document.getElementById('save-api-btn');
+
+        const toggleSnippetBtn = document.getElementById('toggle-snippet-btn');
+        const snippetChevron = document.getElementById('snippet-chevron');
+        const snippetContentBox = document.getElementById('snippet-content-box');
+
+        const chatMessages = document.getElementById('chat-messages');
+        const chatForm = document.getElementById('chat-form');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const quickPromptBtns = document.querySelectorAll('.quick-prompt-btn');
+
+        // ==================== 3. 工具函数：Toast 提示与剪贴板 ====================
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            const colors = {
+                info: 'bg-slate-800 text-white border-slate-700',
+                success: 'bg-emerald-700 text-white border-emerald-600',
+                error: 'bg-red-600 text-white border-red-500'
+            };
+
+            toast.className = `pointer-events-auto flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-lg border text-xs sm:text-sm font-medium transform transition-all duration-300 translate-y-[-10px] opacity-0 ${colors[type] || colors.info}`;
+            toast.innerHTML = `<span>${message}</span>`;
+            container.appendChild(toast);
+
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-[-10px]', 'opacity-0');
+            });
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-[-10px]');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // 兼容 iframe 环境的剪贴板复制函数
+        function copyToClipboard(text, successMsg = '已复制到剪贴板') {
+            try {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                const successful = document.execCommand('copy');
+                document.body.removeChild(textarea);
+                if (successful) {
+                    showToast(successMsg, 'success');
+                } else {
+                    showToast('复制失败，请手动选择复制', 'error');
+                }
+            } catch (err) {
+                showToast('复制失败，请手动选择复制', 'error');
+            }
+        }
+
+        // ==================== 4. 数学公式与 Markdown 联合渲染引擎 ====================
+        /**
+         * 先保护 LaTeX 公式不被 Marked.js 破坏（如 _ 或 * 被误判为斜体），
+         * 解析完 Markdown 后再还原公式并调用 KaTeX 渲染，最后为块级公式添加“复制 LaTeX”按钮。
+         */
+        function renderMathMarkdown(rawText) {
+            const mathBlocks = [];
+            let protectedText = rawText;
+
+            // 1. 保护块级公式 $$...$$
+            protectedText = protectedText.replace(/\$\$([\s\S]*?)\$\$/g, (match, formula) => {
+                const id = `@@MATH_BLOCK_${mathBlocks.length}@@`;
+                mathBlocks.push({ id, formula: formula.trim(), display: true });
+                return id;
+            });
+
+            // 2. 保护行内公式 $...$ (避免匹配货币符号等误判，要求前后合理)
+            protectedText = protectedText.replace(/\$([^\$\n]+?)\$/g, (match, formula) => {
+                const id = `@@MATH_INLINE_${mathBlocks.length}@@`;
+                mathBlocks.push({ id, formula: formula.trim(), display: false });
+                return id;
+            });
+
+            // 3. 解析 Markdown
+            marked.setOptions({
+                breaks: true,
+                gfm: true
+            });
+            let html = marked.parse(protectedText);
+
+            // 4. 还原并用 KaTeX 渲染
+            mathBlocks.forEach(item => {
+                try {
+                    const renderedKatex = katex.renderToString(item.formula, {
+                        displayMode: item.display,
+                        throwOnError: false,
+                        strict: false
+                    });
+
+                    if (item.display) {
+                        // 为块级公式包裹容器并嵌入一键复制 LaTeX 源码按钮
+                        const encodedLatex = encodeURIComponent(item.formula);
+                        const wrappedBlock = `
+                            <div class="formula-wrapper group my-2">
+                                <button type="button" 
+                                    class="copy-latex-btn px-2 py-1 rounded bg-white/90 hover:bg-blue-600 text-slate-600 hover:text-white border border-slate-200 hover:border-blue-600 text-[11px] font-mono shadow-xs cursor-pointer"
+                                    onclick="copyToClipboard(decodeURIComponent('${encodedLatex}'), '已复制公式 LaTeX 源码')">
+                                    复制 LaTeX
+                                </button>
+                                ${renderedKatex}
+                            </div>
+                        `;
+                        html = html.replace(item.id, () => wrappedBlock);
+                    } else {
+                        html = html.replace(item.id, () => renderedKatex);
+                    }
+                } catch (e) {
+                    // 降级显示原始公式
+                    const fallback = item.display ? `$$${item.formula}$$` : `$${item.formula}$`;
+                    html = html.replace(item.id, () => fallback);
+                }
+            });
+
+            return html;
+        }
+
+        // ==================== 5. 文件上传与 PDF.js 解析逻辑 ====================
+        dropzone.addEventListener('click', () => fileInput.click());
+        reuploadBtn.addEventListener('click', () => fileInput.click());
+
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('dropzone-active');
+        });
+
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('dropzone-active');
+        });
+
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dropzone-active');
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handleFileUpload(e.dataTransfer.files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                handleFileUpload(e.target.files[0]);
+            }
+            fileInput.value = ''; // 允许重复选择同一文件
+        });
+
+        removeFileBtn.addEventListener('click', () => {
+            resetDocumentState();
+            showToast('已移除当前文档', 'info');
+        });
+
+        toggleSnippetBtn.addEventListener('click', () => {
+            const isHidden = snippetContentBox.classList.toggle('hidden');
+            snippetChevron.style.transform = isHidden ? 'rotate(-90deg)' : 'rotate(0deg)';
+        });
+
+        function resetDocumentState() {
+        // ==================== 7. API 配置管理与多协议大模型调用 ====================
+        function loadApiConfig() {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    appState.apiConfig = { ...appState.apiConfig, ...parsed };
+                }
+            } catch (e) {
+                console.warn('读取本地 API 配置失败:', e);
+            }
+            syncConfigToModal();
+            updateApiStatusIndicator();
+        }
+
+        function syncConfigToModal() {
+            const cfg = appState.apiConfig;
+            geminiKeyInput.value = cfg.geminiKey || '';
+            geminiModelInput.value = cfg.geminiModel || 'gemini-2.5-flash';
+            openaiBaseUrlInput.value = cfg.openaiBaseUrl || 'https://api.deepseek.com/v1';
+            openaiKeyInput.value = cfg.openaiKey || '';
+            openaiModelInput.value = cfg.openaiModel || 'deepseek-reasoner';
+            switchApiTab(cfg.provider || 'gemini');
+        }
+
+        function switchApiTab(provider) {
+            appState.apiConfig.provider = provider;
+            if (provider === 'gemini') {
+                tabGemini.className = 'py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer bg-white text-slate-900 shadow-2xs';
+                tabOpenai.className = 'py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer text-slate-600 hover:text-slate-900';
+                panelGemini.classList.remove('hidden');
+                panelOpenai.classList.add('hidden');
+            } else {
+                tabOpenai.className = 'py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer bg-white text-slate-900 shadow-2xs';
+                tabGemini.className = 'py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer text-slate-600 hover:text-slate-900';
+                panelOpenai.classList.remove('hidden');
+                panelGemini.classList.add('hidden');
+            }
+        }
+
+        // 检测是否存在当前预览窗口注入的全局 Key
+        function getInjectedGeminiKey() {
+            if (typeof window.__gemini_api_key !== 'undefined' && window.__gemini_api_key) {
+                return window.__gemini_api_key;
+            }
+            return '';
+        }
+
+        function updateApiStatusIndicator() {
+            const cfg = appState.apiConfig;
+            const injectedKey = getInjectedGeminiKey();
+
+            if (cfg.provider === 'openai' && cfg.openaiKey.trim()) {
+                apiStatusDot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+                apiStatusLabel.textContent = `已配置: ${cfg.openaiModel}`;
+            } else if (cfg.provider === 'gemini' && cfg.geminiKey.trim()) {
+                apiStatusDot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+                apiStatusLabel.textContent = `已配置: ${cfg.geminiModel}`;
+            } else if (injectedKey) {
+                apiStatusDot.className = 'w-2 h-2 rounded-full bg-blue-500';
+                apiStatusLabel.textContent = '内置环境就绪';
+            } else {
+                apiStatusDot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+                apiStatusLabel.textContent = '未配置 Key';
+            }
+        }
+
+        // 弹窗事件绑定
+        openApiModalBtn.addEventListener('click', () => {
+            syncConfigToModal();
+            apiSettingsModal.classList.remove('hidden');
+        });
+
+        closeApiModalBtn.addEventListener('click', () => {
+            apiSettingsModal.classList.add('hidden');
+        });
+
+        apiSettingsModal.addEventListener('click', (e) => {
+            if (e.target === apiSettingsModal) {
+                apiSettingsModal.classList.add('hidden');
+            }
+        });
+
+        tabGemini.addEventListener('click', () => switchApiTab('gemini'));
+        tabOpenai.addEventListener('click', () => switchApiTab('openai'));
+
+        presetDeepseekBtn.addEventListener('click', () => {
+            openaiBaseUrlInput.value = 'https://api.deepseek.com/v1';
+            openaiModelInput.value = 'deepseek-reasoner';
+            showToast('已填入 DeepSeek R1 推理模型预设', 'info');
+        });
+
+        presetQwenBtn.addEventListener('click', () => {
+            openaiBaseUrlInput.value = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+            openaiModelInput.value = 'qwen-max';
+            showToast('已填入通义千问 Qwen-Max 预设', 'info');
+        });
+
+        document.querySelectorAll('.preset-model-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetId = btn.getAttribute('data-target');
+                const val = btn.getAttribute('data-val');
+                const inputEl = document.getElementById(targetId);
+                if (inputEl) inputEl.value = val;
+            });
+        });
+
+        saveApiBtn.addEventListener('click', () => {
+            appState.apiConfig.geminiKey = geminiKeyInput.value.trim();
+            appState.apiConfig.geminiModel = geminiModelInput.value.trim() || 'gemini-2.5-flash';
+            appState.apiConfig.openaiBaseUrl = openaiBaseUrlInput.value.trim().replace(/\/+$/, '') || 'https://api.deepseek.com/v1';
+            appState.apiConfig.openaiKey = openaiKeyInput.value.trim();
+            appState.apiConfig.openaiModel = openaiModelInput.value.trim() || 'deepseek-reasoner';
+
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(appState.apiConfig));
+                updateApiStatusIndicator();
+                apiSettingsModal.classList.add('hidden');
+                showToast('API 配置已保存至本地浏览器', 'success');
+            } catch (e) {
+                showToast('保存本地配置失败，请检查浏览器存储权限', 'error');
+            }
+        });
+
+        clearApiBtn.addEventListener('click', () => {
+            localStorage.removeItem(STORAGE_KEY);
+            appState.apiConfig = {
+                provider: 'gemini',
+                geminiKey: '',
+                geminiModel: 'gemini-2.5-flash',
+                openaiBaseUrl: 'https://api.deepseek.com/v1',
+                openaiKey: '',
+                openaiModel: 'deepseek-reasoner'
+            };
+            syncConfigToModal();
+            updateApiStatusIndicator();
+            showToast('已清除本地保存的 API 配置', 'info');
+        });
+
+        testApiBtn.addEventListener('click', async () => {
+            // 临时读取输入框当前值进行测试
+            const tempConfig = {
+                provider: appState.apiConfig.provider,
+                geminiKey: geminiKeyInput.value.trim(),
+                geminiModel: geminiModelInput.value.trim() || 'gemini-2.5-flash',
+                openaiBaseUrl: openaiBaseUrlInput.value.trim().replace(/\/+$/, ''),
+                openaiKey: openaiKeyInput.value.trim(),
+                openaiModel: openaiModelInput.value.trim()
+            };
+
+            testApiBtn.disabled = true;
+            testApiBtn.textContent = '⏳ 测试中...';
+
+            try {
+                const reply = await executeModelRequest('请仅回复：1+1=2', [], tempConfig, true);
+                showToast(`连接成功！模型响应：${reply.slice(0, 30)}`, 'success');
+            } catch (err) {
+                showToast(`连接失败：${err.message}`, 'error');
+            } finally {
+                testApiBtn.disabled = false;
+                testApiBtn.textContent = '⚡ 测试连接';
+            }
+        });
+
+        // 统一大模型调用调度函数（支持 Gemini 与 OpenAI 兼容协议 + 指数退避重试）
+        async function executeModelRequest(userQuery, historyList, overrideConfig = null, isTest = false) {
+            const cfg = overrideConfig || appState.apiConfig;
+            const maxRetries = isTest ? 1 : 4;
+            let delay = 1000;
+
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                try {
+                    if (cfg.provider === 'openai') {
+                        // ===== OpenAI 兼容协议 (DeepSeek / 通义千问 / OpenRouter 等) =====
+                        if (!cfg.openaiKey) {
+                            throw new Error('尚未填写 OpenAI 兼容接口的 API Key，请点击右上角「API 设置」进行配置。');
+                        }
+                        const endpoint = `${cfg.openaiBaseUrl}/chat/completions`;
+                        const messages = [
+                            { role: 'system', content: MATH_SYSTEM_PROMPT }
+                        ];
+
+                        if (!isTest && appState.document.content) {
+                            const docText = appState.document.content.slice(0, 100000);
+                            messages.push({
+                                role: 'user',
+                                content: `【参考数学文档信息】\n文件名：${appState.document.name}\n总页数：${appState.document.pages}\n\n【文档完整提取内容】：\n${docText}\n\n请仔细阅读并理解上述数学文档内容，准备回答我接下来的问题。`
+                            });
+                            messages.push({
+                                role: 'assistant',
+                                content: `我已完整阅读并理解了文档《${appState.document.name}》中的数学定义、公式与推导内容。请提出你的问题。`
+                            });
+                        }
+
+                        for (const msg of historyList) {
+                            messages.push({
+                                role: msg.role === 'model' ? 'assistant' : 'user',
+                                content: msg.text
+                            });
+                        }
+
+                        messages.push({ role: 'user', content: userQuery });
+
+                        const response = await fetch(endpoint, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${cfg.openaiKey}`
+                            },
+                            body: JSON.stringify({
+                                model: cfg.openaiModel,
+                                messages: messages,
+                                temperature: 0.2
+                            })
+                        });
+
+                        if (!response.ok) {
+                            const errText = await response.text();
+                            throw new Error(`HTTP ${response.status}: ${errText.slice(0, 120)}`);
+                        }
+
+                        const data = await response.json();
+                        const content = data.choices?.[0]?.message?.content;
+                        if (!content) throw new Error('接口未返回有效文本内容');
+                        return content;
+
+                    } else {
+                        // ===== Google Gemini 协议 =====
+                        const activeKey = cfg.geminiKey || getInjectedGeminiKey();
+                        const isCanvasRuntime = (typeof window.__gemini_api_key !== 'undefined') || window.location.hostname.includes('googleusercontent') || window.location.protocol === 'about:';
+                        
+                        // 如果在独立公网域名下且未配置 Key，明确引导打开设置弹窗
+                        if (!activeKey && !isCanvasRuntime) {
+                            throw new Error('当前为独立部署环境，请先点击右上角「API 设置」填入您的 Gemini API Key 或切换至 DeepSeek/通义千问接口。');
+                        }
+
+                        const modelName = cfg.geminiModel || 'gemini-2.5-flash';
+                        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:generateContent?key=${encodeURIComponent(activeKey)}`;
+
+                        const contents = [];
+                        if (!isTest && appState.document.content) {
+                            const docText = appState.document.content.slice(0, 120000);
+                            contents.push({
+                                role: 'user',
+                                parts: [{
+                                    text: `【参考数学文档信息】\n文件名：${appState.document.name}\n总页数：${appState.document.pages}\n\n【文档完整提取内容】：\n${docText}\n\n请仔细阅读并理解上述数学文档内容，准备回答我接下来的问题。`
+                                }]
+                            });
+                            contents.push({
+                                role: 'model',
+                                parts: [{
+                                    text: `我已完整阅读并理解了文档《${appState.document.name}》中的数学定义、公式与推导内容。请提出你的问题或分析指令。`
+                                }]
+                            });
+                        }
+
+                        for (const msg of historyList) {
+                            contents.push({
+                                role: msg.role,
+                                parts: [{ text: msg.text }]
+                            });
+                        }
+
+                        contents.push({
+                            role: 'user',
+                            parts: [{ text: userQuery }]
+                        });
+
+                        const payload = {
+                            contents: contents,
+                            systemInstruction: {
+                                parts: [{ text: MATH_SYSTEM_PROMPT }]
+                            },
+                            generationConfig: {
+                                temperature: 0.2
+                            }
+                        };
+
+                        const response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (!response.ok) {
+                            const errData = await response.json().catch(() => ({}));
+                            const errMsg = errData.error?.message || `HTTP error! status: ${response.status}`;
+                            throw new Error(errMsg);
+                        }
+
+                        const result = await response.json();
+                        const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (!responseText) throw new Error('模型未返回有效的文本内容');
+                        return responseText;
+                    }
+                } catch (err) {
+                    // 若属于未配置 Key 的提示性错误，直接抛出不进行无意义重试
+                    if (err.message.includes('API 设置') || err.message.includes('API Key')) {
+                        throw err;
+                    }
+                    if (attempt === maxRetries) {
+                        throw err;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2;
+                }
+            }
+        }
+
+        async function callGeminiMathAgent(userQuery) {
+            const recentHistory = appState.chatHistory.slice(-10);
+            return await executeModelRequest(userQuery, recentHistory);
+        }
+
+        // ==================== 8. 提交与事件绑定 ====================
+        async function handleSendMessage(customPrompt = null) {
+            if (appState.isGenerating) return;
+
+            const query = (customPrompt !== null ? customPrompt : userInput.value).trim();
+            if (!query) return;
+
+            // 如果点击快捷按钮但尚未上传文档，给出友好提示但仍允许继续或引导
+            if (customPrompt !== null && !appState.document.content) {
+                showToast('提示：你尚未上传 PDF 文档，建议先拖拽上传文献后再使用文档分析指令', 'info');
+                return;
+            }
+
+            // 清空输入框并重置高度
+            if (customPrompt === null) {
+                userInput.value = '';
+                userInput.style.height = 'auto';
+            }
+
+            appState.isGenerating = true;
+            sendBtn.disabled = true;
+
+            // 渲染用户气泡
+            appendUserMessage(query);
+            const loadingBubble = createAiLoadingBubble();
+
+            try {
+                const aiResponse = await callGeminiMathAgent(query);
+                
+                // 记录对话历史
+                appState.chatHistory.push({ role: 'user', text: query });
+                appState.chatHistory.push({ role: 'model', text: aiResponse });
+
+                loadingBubble.remove();
+                appendAiMessage(aiResponse);
+            } catch (error) {
+                loadingBubble.remove();
+                appendAiMessage(`⚠️ **推理请求遇到问题**：${error.message}`);
+                if (error.message.includes('API 设置')) {
+                    apiSettingsModal.classList.remove('hidden');
+                }
+            } finally {
+                appState.isGenerating = false;
+                sendBtn.disabled = false;
+                userInput.focus();
+            }
+        }
+
+        // 表单提交
+        chatForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            handleSendMessage();
+        });
+
+        // 输入框自动增高与 Enter 发送支持
+        userInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 144) + 'px';
+        });
+
+        userInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
+            }
+        });
+
+        // 快捷分析按钮点击
+        quickPromptBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const promptText = btn.getAttribute('data-prompt');
+                handleSendMessage(promptText);
+            });
+        });
+
+        // 清空对话记录
+        clearChatBtn.addEventListener('click', () => {
+            appState.chatHistory = [];
+            // 保留第一条欢迎卡片，清除后续所有消息
+            while (chatMessages.children.length > 1) {
+                chatMessages.removeChild(chatMessages.lastChild);
+            }
+            showToast('对话历史已清空', 'info');
+        });
+
+        // 导出对话记录为 Markdown 文件
+        exportChatBtn.addEventListener('click', () => {
+            if (appState.chatHistory.length === 0) {
+                showToast('当前暂无对话记录可导出', 'info');
+                return;
+            }
+            const lines = [
+                `# MathMind AI 数学分析笔记`,
+                `- 导出时间：${new Date().toLocaleString()}`,
+                appState.document.name ? `- 参考文档：${appState.document.name}（共 ${appState.document.pages} 页）` : `- 参考文档：无`,
+                `\n---\n`
+            ];
+
+            appState.chatHistory.forEach((item) => {
+                const roleTitle = item.role === 'user' ? '### 🧑‍🎓 提问' : '### ∑ MathMind 推导';
+                lines.push(`${roleTitle}\n\n${item.text}\n\n---\n`);
+            });
+
+            const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `MathMind_笔记_${new Date().toISOString().slice(0, 10)}.md`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('已导出 Markdown 数学笔记', 'success');
+        });
+
+        // 初始化渲染欢迎消息中的公式并加载本地 API 配置
+        window.addEventListener('DOMContentLoaded', () => {
+            loadApiConfig();
+            const welcomeBody = chatMessages.querySelector('.markdown-body');
+            if (welcomeBody) {
+                const rawWelcome = welcomeBody.innerHTML;
+                // 渲染欢迎消息里的双美元公式
+                welcomeBody.innerHTML = rawWelcome.replace(/\$\$([\s\S]*?)\$\$/g, (match, formula) => {
+                    const rendered = katex.renderToString(formula.trim(), { displayMode: true, throwOnError: false });
+                    const encoded = encodeURIComponent(formula.trim());
+                    return `
+                        <div class="formula-wrapper group my-2">
+                            <button type="button" 
+                                class="copy-latex-btn px-2 py-1 rounded bg-white/90 hover:bg-blue-600 text-slate-600 hover:text-white border border-slate-200 hover:border-blue-600 text-[11px] font-mono shadow-xs cursor-pointer"
+                                onclick="copyToClipboard(decodeURIComponent('${encoded}'), '已复制公式 LaTeX 源码')">
+                                复制 LaTeX
+                            </button>
+                            ${rendered}
+                        </div>
+                    `;
+                });
+            }
+        });
+    </script>
+</body>
+</html>
